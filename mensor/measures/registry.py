@@ -1,40 +1,37 @@
 import os
-from collections import Counter
+from collections import Counter, namedtuple
 
 from mensor.utils import nested_dict_copy, SequenceMap
 
-from .provider import MeasureProvider
-from .stats import StatsRegistry, global_stats_registry
-from .strategy import EvaluationStrategy
-from .types import (MeasureEvaluator, Provision, _ProvidedFeature,
-                    _ResolvedFeature)
+from .providers.base import MeasureProvider
+from .registries import StatsRegistry, global_stats_registry
+from .evaluation.strategy import EvaluationStrategy
+from .common.features import _ProvidedFeature, _ResolvedFeature
 
 __all__ = ['MeasureRegistry']
 
+Provision = namedtuple('Provision', ['provider', 'join_prefix', 'measures', 'dimensions'])
 
-class MeasureRegistry(MeasureEvaluator):
+
+class MeasureRegistry(MeasureProvider):
     """
-    A `MeasureRegistry` instance is a wrapper around a pool of `MeasureProvider`
-    instances that generates a graph of relationships between all of the
-    provided identifiers, measures and dimensions. Relationships between these
-    features can then be extracted and used in various tasks, chief among which
-    being the evaluation of measures for a statistical unit type segmented by
-    various dimensions. The logic for the evaluation is handled by the
-    `.stategy.EvaluationStrategy` class. The only purpose of this class is to
-    construct and manage the graph.
+    A `MeasureProvider` subclass that acts as a host for other `MeasureProvider`
+    instances, allowing evaluations of measures that span multiple providers.
 
-    To add `MeasureProvider`s to instances of this class, simply call the
-    `.registry()` method of this class and pass to it the relevant
-    `MeasureProvider` instance.
+    Instances of this class generate a graph of relationships between all of the
+    identifiers, measures and dimensions provided by all hosted providers.
+    Relationships between these features can then be extracted and used in
+    various tasks, chief among which being the evaluation of measures for a
+    statistical unit type segmented by various dimensions. The logic for the
+    evaluation is handled by the `mensor.measures.evaluation.EvaluationStrategy`
+    class.
 
-    Relationships:
-        The graph formed by registering `MeasureProvider`s has the following
-        relationships.
-
-        unit_type -> measure
-        unit_type -> dimension
-        unit_type -> foreign_key
-        unit_type <- foreign_key [-> reverse_foreign_key]
+    The graph formed by registering `MeasureProvider` instances has the following
+    relationships:
+        - unit_type -> foreign_key
+        - unit_type <- foreign_key [-> reverse_foreign_key]
+        - unit_type -> dimension
+        - unit_type -> measure
     """
 
     class GraphCache(object):
@@ -168,13 +165,12 @@ class MeasureRegistry(MeasureEvaluator):
         return self._stats_registry.aggregations.register(agg=agg, name=name, backend=backend)
 
     @property
-    def unit_types(self):
+    def identifiers(self):
         return SequenceMap(
             self.identifier_for_unit(ut) for ut in self._cache.identifiers.keys()
         )
 
     # MeasureEvaluator methods
-
     def identifier_for_unit(self, unit_type):
         return _ResolvedFeature(
             name=unit_type if isinstance(unit_type, str) else unit_type.name,
@@ -245,7 +241,7 @@ class MeasureRegistry(MeasureEvaluator):
                 via += ('/' + via_suffix) if via else via_suffix
             attrs['unit_type'] = unit_type
 
-        return MeasureEvaluator._resolve(self, eff_unit_type, feature, role=role)._with_attrs(**attrs).as_via(via)
+        return MeasureProvider._resolve(self, eff_unit_type, feature, role=role)._with_attrs(**attrs).as_via(via)
 
     def _find_primary_key_for_unit_type(self, unit_type):
         for identifier in sorted(self._cache.identifiers, key=lambda x: len(x.name), reverse=True):
@@ -276,6 +272,8 @@ class MeasureRegistry(MeasureEvaluator):
             list<Provision>: A list of `Provision` instances which optimally
                 supply the requested measures and dimensions.
         """
+
+        # TODO: Handle relation case, where ...
 
         # [Provision(provider, measures, dimensions), ...]
         unit_type = self.identifier_for_unit(unit_type)
@@ -341,39 +339,3 @@ class MeasureRegistry(MeasureEvaluator):
         return EvaluationStrategy.from_spec(
             self, unit_type, measures=measures, segment_by=segment_by, where=where
         )
-
-    def show(self, *unit_types, kind=None):
-        unit_types = [self.identifier_for_unit(ut) for ut in unit_types] if len(unit_types) > 0 else sorted(self.unit_types)
-        if isinstance(kind, str):
-            kind = [kind]
-        if not kind:
-            kind = ['foreign_key', 'reverse_foreign_key', 'dimension', 'partition', 'measure']
-
-        for unit_type in unit_types:
-            print("{}:{}".format(
-                unit_type.name,
-                " [{}]".format(unit_type.desc) if unit_type.desc else ""
-            ))
-
-            features = {
-                'foreign_key': self.foreign_keys_for_unit(unit_type),
-                'reverse_foreign_key': self.reverse_foreign_keys_for_unit(unit_type),
-                'dimension': self.dimensions_for_unit(unit_type, include_partitions=False),
-                'partition': self.partitions_for_unit(unit_type),
-                'measure': self.measures_for_unit(unit_type)
-            }
-
-            for k in kind:
-                feature_name = "{}s".format(k.replace('_', ' ').title())
-                feature_set = features[k]
-                if not len(feature_set) or len(feature_set) == 1 and feature_set.first == unit_type:
-                    continue
-                print("    {}:".format(feature_name))
-                for feature in sorted(feature_set):
-                    if feature != unit_type:
-                        print(
-                            "        - {}{}".format(
-                                feature.mask,
-                                " [{}]".format(feature.desc) if feature.desc else ""
-                            )
-                        )
