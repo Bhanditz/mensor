@@ -36,7 +36,7 @@ setup(
     name='mensor',
     description="A dynamic graph-based metric computation engine.",
     long_description=__doc__.strip(),
-    long_description_content_type='text/markdown',
+    # long_description_content_type='text/markdown',
     version=version_info['__version__'],
     author=version_info['__author__'],
     author_email=version_info['__author_email__'],
@@ -51,6 +51,8 @@ setup(
     packages=find_packages(),
     python_requires='~=3.4',
     install_requires=version_info['__dependencies__'],
+    setup_requires=["pytest-runner"],
+    tests_require=['pytest'],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Environment :: Console',

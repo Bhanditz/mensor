@@ -1,4 +1,4 @@
 # flake8: noqa
 
 from .registry import MetricRegistry
-from .types import Metric, MetricImplementation
+from .types import CustomMetric, Metric, MetricImplementation

@@ -218,7 +218,7 @@ class PandasMeasureProvider(MutableMeasureProvider):
     @classmethod
     def _get_constraint_maps(cls):
         """
-        All constraints expect two parameters:
+        All constraints expect two Args:
          - the DataFrame to be constrained
          - the constraint
         """
